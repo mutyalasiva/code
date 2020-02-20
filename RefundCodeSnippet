@@ -1,0 +1,105 @@
+  Notes:
+  This method is used to pull the customers who has excess amount in their accounts and are eligible for refunds based on below criterias
+  1. There is no check from the customer from past X days.
+  2. Customer dont have any active invoice for past y days.
+  3. Customer never has any unpaid invoice in past.
+  4. customer check payment is never bounced.
+   if all the above criterias passed then customer is eligible for refund 
+   
+   
+  public static class RefundLedgers
+  {
+    
+    /// <summary>
+    /// Method for loading refund eligibleledger summaries
+	/// <param name="businessFinancialProcess"></param>
+    /// </summary
+   
+  private static void LoadRefundEligibleLedgers(BusinessFinancialProcess businessFinancialProcess)
+        {
+     
+            var invoiceClearingPeriod = PimsFunctions.ApplicationDate.AddDays(Convert.ToInt32(ConfigurationManager.AppSettings[businessFinancialProcess.BusinessFinancialKey + "RefundInvoiceClearingPeriod"]));
+            var paymentClearingPeriod = PimsFunctions.ApplicationDate.AddDays(Convert.ToInt32(ConfigurationManager.AppSettings[businessFinancialProcess.BusinessFinancialKey + "RefundCheckClearingPeriod"]));
+            var minRefundAmount = Convert.ToDecimal(ConfigurationManager.AppSettings["MinRefundAmount"]);
+            var maxRefundAmount = Convert.ToDecimal(ConfigurationManager.AppSettings["MaxRefundAmount"]);
+            using (var context = new PimsMinEntities())
+            {
+
+
+                _ledgerSummaryRefunds = context.LedgerSummaries
+                                             .Where(x => x.BusinessLineID.Equals(businessFinancialProcess.BusinessLineID)
+                                                      && x.FinancialGroupKey.Equals(businessFinancialProcess.FinancialGroupKey, StringComparison.CurrentCultureIgnoreCase)
+                                                      && x.PaymentAvailable > minRefundAmount
+                                                      && x.PaymentAvailable < maxRefundAmount
+                                                      && x.ChargeOutstanding == 0
+                                                      && x.Period == context.LedgerSummaries
+                                                                            .Where(ls => ls.LedgerHeaderKey.Equals(x.LedgerHeaderKey, StringComparison.CurrentCultureIgnoreCase)
+                                                                                      && ls.FinancialGroupKey.Equals(x.FinancialGroupKey, StringComparison.CurrentCultureIgnoreCase)
+                                                                                      && ls.BusinessLineID.Equals(x.BusinessLineID))
+                                                                            .Max(p => p.Period)
+                                                      && context.LedgerHeaders
+                                                             .Any(l => l.BusinessLineID.Equals(x.BusinessLineID)
+                                                                    && l.FinancialGroupKey.Equals(x.FinancialGroupKey, StringComparison.CurrentCultureIgnoreCase)
+                                                                    && l.LedgerHeaderKey.Equals(x.LedgerHeaderKey, StringComparison.CurrentCultureIgnoreCase)
+                                                                    && l.EffectiveStatus.Equals("Active", StringComparison.CurrentCultureIgnoreCase)
+                                                                    && l.EffectiveDate == context.LedgerHeaders
+                                                                                                 .Where(lh => lh.BusinessLineID.Equals(l.BusinessLineID)
+                                                                                                           && lh.FinancialGroupKey.Equals(l.FinancialGroupKey, StringComparison.CurrentCultureIgnoreCase)
+                                                                                                           && lh.LedgerHeaderKey.Equals(l.LedgerHeaderKey))
+                                                                                                 .Max(e => e.EffectiveDate)
+                                                      && !context.InvoiceHeaders
+                                                                 .Any(y => y.InvoiceDate >= invoiceClearingPeriod
+                                                                        && y.BusinessLineID.Equals(x.BusinessLineID)
+                                                                        && y.FinancialGroupKey.Equals(x.FinancialGroupKey, StringComparison.CurrentCultureIgnoreCase)
+                                                                        && y.LedgerHeaderKey.Equals(x.LedgerHeaderKey, StringComparison.CurrentCultureIgnoreCase)
+                                                                        && y.OriginalInvoiceHeaderID == 0
+                                                       && !context.InvoiceHeaders
+                                                                  .Where(z => z.LedgerHeaderKey.Equals(x.LedgerHeaderKey, StringComparison.CurrentCultureIgnoreCase)
+                                                                           && z.BusinessLineID.Equals(x.BusinessLineID)
+                                                                           && z.FinancialGroupKey.Equals(x.FinancialGroupKey, StringComparison.CurrentCultureIgnoreCase)
+                                                                           && z.OriginalInvoiceHeaderID.Equals(y.InvoiceHeaderID)
+                                                                           && z.OriginalInvoiceHeaderID > 0)
+                                                                           .Select(z => true)
+                                                                           .FirstOrDefault())
+                                                       && !context.ReceiptPayments
+                                                                 .Any(p => p.TransactionDate >= paymentClearingPeriod
+                                                                        && p.BusinessLineID.Equals(x.BusinessLineID)
+                                                                        && p.FinancialGroupKey.Equals(x.FinancialGroupKey, StringComparison.CurrentCultureIgnoreCase)
+                                                                        && p.LedgerHeaderKey.Equals(x.LedgerHeaderKey)
+                                                                        && p.OriginalReceiptPaymentID == 0
+                                                                        && context.ReceiptPaymentDetails
+                                                                                   .Any(rp => rp.ReceiptPaymentID.Equals(p.ReceiptPaymentID)
+                                                                                           && rp.ReceiptPageID.Equals(p.ReceiptPageID)
+                                                                                           && rp.RemittanceIdentifierCode.Equals("check", StringComparison.CurrentCultureIgnoreCase)))
+
+                                                      && !context.ReceiptPayments
+                                                                 .Any(r => r.TransactionTypeCode.Equals("unpaid", StringComparison.CurrentCultureIgnoreCase)
+                                                                        && r.TransactionReasonCode.Equals("Recovery", StringComparison.CurrentCultureIgnoreCase)
+                                                                        && r.LedgerHeaderKey.Equals(x.LedgerHeaderKey)
+                                                                        && r.BusinessLineID.Equals(x.BusinessLineID)
+                                                                        && r.FinancialGroupKey.Equals(x.FinancialGroupKey, StringComparison.CurrentCultureIgnoreCase)
+                                                                        && r.OriginalReceiptPaymentID == 0
+
+
+                                                       && !context.ReceiptPayments
+                                                        .Where(z => z.LedgerHeaderKey.Equals(x.LedgerHeaderKey, StringComparison.CurrentCultureIgnoreCase)
+                                                                 && z.BusinessLineID.Equals(x.BusinessLineID)
+                                                                 && z.FinancialGroupKey.Equals(x.FinancialGroupKey, StringComparison.CurrentCultureIgnoreCase)
+                                                                 && z.OriginalReceiptPaymentID.Equals(r.ReceiptPaymentID)
+                                                                 && z.OriginalReceiptPaymentID > 0)
+                                                                  .Select(z => true)
+                                                                .FirstOrDefault())))
+
+                                             .Select(x => new
+                                             {
+                                                 x.LedgerHeaderKey
+                                                              ,
+                                                 RefundAvailable = x.PaymentAvailable - x.ChargeOutstanding
+                                             })
+                                             .Distinct()
+                                             .ToDictionary(x => x.LedgerHeaderKey, x => x.RefundAvailable);
+
+            }
+        }
+	}
+}
