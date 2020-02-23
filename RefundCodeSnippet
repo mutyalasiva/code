@@ -96,7 +96,6 @@
                                                               ,
                                                  RefundAvailable = x.PaymentAvailable - x.ChargeOutstanding
                                              })
-                                             .Distinct()
                                              .ToDictionary(x => x.LedgerHeaderKey, x => x.RefundAvailable);
 
             }
